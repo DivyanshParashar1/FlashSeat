@@ -1,0 +1,16 @@
+echo "Running pre-commit checks..."
+
+# 1. Format and lint staged files
+npx lint-staged || exit 1
+
+npm exec prettier . --write || exit 1
+
+# 2. Run TypeScript type checks (ensures Fastify and Drizzle types are perfect)
+echo "Type checking..."
+npx tsc --noEmit || exit 1
+
+# 3. Check Drizzle schema validity
+echo "Checking Drizzle schema..."
+npx drizzle-kit check || exit 1
+
+echo "All checks passed! 🎉"
