@@ -1,6 +1,6 @@
 import { pgTable, uuid, primaryKey } from 'drizzle-orm/pg-core';
 import { reservations } from './reservations.schema.js';
-import { seatsTable } from './seats.schema.js';
+import { seats } from './seats.schema.js';
 
 export const reservationSeats = pgTable(
   'reservation_seats',
@@ -9,7 +9,7 @@ export const reservationSeats = pgTable(
       .references(() => reservations.id)
       .notNull(),
     seatId: uuid('seat_id')
-      .references(() => seatsTable.id)
+      .references(() => seats.id)
       .notNull(),
   },
   (table) => {

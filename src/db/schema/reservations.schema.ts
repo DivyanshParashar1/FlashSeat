@@ -1,9 +1,12 @@
-import { pgTable, uuid, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, timestamp, varchar } from 'drizzle-orm/pg-core';
 import { users } from './users.schema.js';
 import { reservationStatusEnum } from './enums.schema.js';
 
 export const reservations = pgTable('reservations', {
   id: uuid('id').defaultRandom().primaryKey(),
+  idempotencyKey: varchar('idempotency_key', { length: 128 })
+    .unique()
+    .notNull(),
   userId: uuid('user_id')
     .references(() => users.id)
     .notNull(),

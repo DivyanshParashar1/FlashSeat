@@ -11,3 +11,9 @@ export const reservationStatusEnum = pgEnum('reservationStatus', [
   'expired',
   'failed',
 ]);
+
+export const paymentStatusEnum = pgEnum('paymentStatus', [
+  'pending',
+  'succeeded',
+  'failed',
+]);

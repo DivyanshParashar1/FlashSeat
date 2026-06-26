@@ -10,7 +10,7 @@ import { seatStatusEnum } from './enums.schema.js';
 import { events } from './events.schema.js';
 import { users } from './users.schema.js';
 
-export const seatsTable = pgTable(
+export const seats = pgTable(
   'seats',
   {
     id: uuid('id').defaultRandom().primaryKey(),

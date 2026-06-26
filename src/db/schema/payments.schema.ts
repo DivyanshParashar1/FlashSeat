@@ -6,6 +6,7 @@ import {
   timestamp,
 } from 'drizzle-orm/pg-core';
 import { reservations } from './reservations.schema.js';
+import { paymentStatusEnum } from './enums.schema.js';
 
 export const payments = pgTable('payments', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -14,6 +15,7 @@ export const payments = pgTable('payments', {
     .notNull(),
   amount: integer('amount').notNull(), // In cents
   stripePaymentIntentId: varchar('stripe_payment_intent_id', { length: 255 }),
+  status: paymentStatusEnum('status').default('pending').notNull(),
   idempotencyKey: varchar('idempotency_key', { length: 255 })
     .notNull()
     .unique(), // CRITICAL for webhook safety

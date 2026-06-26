@@ -120,3 +120,7 @@ dist
 
 # Drizzle output
 /drizzle/
+
+
+/.agents
+/learning
