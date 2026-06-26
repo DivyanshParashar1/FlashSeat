@@ -5,3 +5,5 @@ export * from './seats.schema.js';
 export * from './reservations.schema.js';
 export * from './reservation_seats.schema.js';
 export * from './payments.schema.js';
+export * from './bookings.schema.js';
+export * from './processed_webhook_events.schema.js';
