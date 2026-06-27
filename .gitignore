@@ -118,8 +118,6 @@ dist
 *.sln
 *.swp
 
-# Drizzle output
-/drizzle/
 
 
 /.agents

@@ -36,6 +36,7 @@ export const seats = pgTable(
         table.eventId,
         table.status,
       ),
+      heldUntilIdx: index('held_until_idx').on(table.heldUntil),
     };
   },
 );
