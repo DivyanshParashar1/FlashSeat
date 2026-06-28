@@ -15,20 +15,11 @@ export const seats = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     eventId: uuid('event_id')
-      // COMPOSITION: a seat has no meaning without its event. If an admin
-      // deletes an event, its seats should disappear with it. (Note: this
-      // cascade is BLOCKED in practice if any seat has a booking — see the
-      // `restrict` on bookings.seatId below. That's intentional: you can't
-      // nuke an event that people have already paid into.)
       .references(() => events.id, { onDelete: 'cascade' })
       .notNull(),
     seatNumber: varchar('seat_number', { length: 10 }).notNull(),
     status: seatStatusEnum('status').default('available').notNull(),
     price: integer('price').notNull(),
-    // NULLABLE SOFT POINTER: `held_by` is just "who currently holds this seat".
-    // If that user is deleted while holding a seat, we don't want to lose the
-    // seat — we want to release the hold. set null does exactly that. (Only
-    // valid because the column is nullable.)
     heldBy: uuid('held_by').references(() => users.id, {
       onDelete: 'set null',
     }),
