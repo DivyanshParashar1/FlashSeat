@@ -6,19 +6,20 @@ import { seats } from './seats.schema.js';
 export const bookings = pgTable('bookings', {
   id: uuid('id').defaultRandom().notNull().primaryKey(),
   reservationId: uuid('reservation_id')
-    .references(() => reservations.id)
+    .references(() => reservations.id, { onDelete: 'restrict' })
     .notNull(),
   userId: uuid('user_id')
-    .references(() => users.id)
+    .references(() => users.id, { onDelete: 'restrict' })
     .notNull(),
   seatId: uuid('seat_id')
-    .references(() => seats.id)
-    .notNull(),
-  bookedAt: timestamp('booked_at', { mode: 'string' }).defaultNow().notNull(),
+    .references(() => seats.id, { onDelete: 'restrict' })
+    .notNull()
+    .unique(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .defaultNow()
-    .notNull(),
+    .notNull()
+    .$onUpdate(() => new Date()),
 });

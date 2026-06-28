@@ -1,5 +1,6 @@
 import { pgTable, uuid, timestamp, varchar } from 'drizzle-orm/pg-core';
 import { users } from './users.schema.js';
+import { events } from './events.schema.js';
 import { reservationStatusEnum } from './enums.schema.js';
 
 export const reservations = pgTable('reservations', {
@@ -8,7 +9,10 @@ export const reservations = pgTable('reservations', {
     .unique()
     .notNull(),
   userId: uuid('user_id')
-    .references(() => users.id)
+    .references(() => users.id, { onDelete: 'restrict' })
+    .notNull(),
+  eventId: uuid('event_id')
+    .references(() => events.id, { onDelete: 'cascade' })
     .notNull(),
   status: reservationStatusEnum('status').default('pending').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -17,5 +21,6 @@ export const reservations = pgTable('reservations', {
     .notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .defaultNow()
-    .notNull(),
+    .notNull()
+    .$onUpdate(() => new Date()),
 });

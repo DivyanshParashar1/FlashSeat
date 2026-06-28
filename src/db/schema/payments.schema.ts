@@ -11,7 +11,11 @@ import { paymentStatusEnum } from './enums.schema.js';
 export const payments = pgTable('payments', {
   id: uuid('id').defaultRandom().primaryKey(),
   reservationId: uuid('reservation_id')
-    .references(() => reservations.id)
+    // RESTRICT: a payment is a financial record. Never let it be auto-deleted
+    // as a side effect of deleting its reservation — that would erase money
+    // movement from the books. Deleting the reservation is blocked while a
+    // payment row points at it.
+    .references(() => reservations.id, { onDelete: 'restrict' })
     .notNull(),
   amount: integer('amount').notNull(), // In cents
   stripePaymentIntentId: varchar('stripe_payment_intent_id', { length: 255 }),
@@ -22,4 +26,8 @@ export const payments = pgTable('payments', {
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => new Date()),
 });
