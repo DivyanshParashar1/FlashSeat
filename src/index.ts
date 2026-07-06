@@ -1,12 +1,17 @@
 import { server } from './app.js';
 
-server.listen(
-  { port: 8080, host: '0.0.0.0' },
-  (err: Error | null, address: string) => {
-    if (err) {
-      console.error(err);
-      process.exit(1);
-    }
-    console.log(`Server listening at ${address}`);
-  },
-);
+const start = async () => {
+  try {
+    await server.ready();
+
+    await server.listen({
+      port: Number(server.config.PORT),
+      host: '0.0.0.0',
+    });
+  } catch (err) {
+    server.log.error(err);
+    process.exit(1);
+  }
+};
+
+start();
