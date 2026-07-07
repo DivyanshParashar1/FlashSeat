@@ -5,6 +5,7 @@ export declare module 'fastify' {
     config: {
       PORT: string;
       DATABASE_URL: string;
+      ORIGINS: string;
     };
   }
 }
