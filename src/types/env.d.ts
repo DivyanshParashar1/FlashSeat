@@ -6,6 +6,7 @@ export declare module 'fastify' {
       PORT: string;
       DATABASE_URL: string;
       ORIGINS: string;
+      JWT_SECRET: string;
     };
   }
 }

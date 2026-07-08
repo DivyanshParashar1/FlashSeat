@@ -22,8 +22,10 @@
     "@fastify/cors": "^11.2.0",
     "@fastify/env": "^7.0.0",
     "@fastify/helmet": "^13.0.2",
+    "@fastify/jwt": "^10.2.0",
     "@fastify/sensible": "^6.0.4",
     "@neondatabase/serverless": "^1.1.0",
+    "bcrypt": "^6.0.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "drizzle-seed": "^0.3.1",
@@ -35,6 +37,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/bcrypt": "^6.0.0",
     "@types/node": "^26.0.0",
     "@types/pg": "^8.20.0",
     "@types/ws": "^8.18.1",
