@@ -7,6 +7,7 @@ export declare module 'fastify' {
       DATABASE_URL: string;
       ORIGINS: string;
       JWT_SECRET: string;
+      JWT_EXPIRY: string;
     };
   }
 }

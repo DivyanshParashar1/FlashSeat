@@ -7,12 +7,13 @@ import jwt from '@fastify/jwt';
 
 const schema = {
   type: 'object',
-  required: ['PORT', 'DATABASE_URL', 'ORIGINS', 'JWT_SECRET'],
+  required: ['PORT', 'DATABASE_URL', 'ORIGINS', 'JWT_SECRET', 'JWT_EXPIRY'],
   properties: {
     PORT: { type: 'string', default: '3000' },
     DATABASE_URL: { type: 'string' },
     ORIGINS: { type: 'string', default: '*' },
     JWT_SECRET: { type: 'string' },
+    JWT_EXPIRY: { type: 'string', default: '1h' },
   },
 };
 
@@ -34,6 +35,9 @@ server.after(() => {
   });
   server.register(jwt, {
     secret: server.config.JWT_SECRET,
+    sign: {
+      expiresIn: server.config.JWT_EXPIRY,
+    },
   });
 });
 

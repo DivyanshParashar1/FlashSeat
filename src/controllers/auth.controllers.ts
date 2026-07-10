@@ -1,6 +1,6 @@
 import { type FastifyRequest, type FastifyReply } from 'fastify';
 import * as authService from '../services/auth.service.js';
-import type { userBody } from '../routes/auth.routes.js';
+import type { userBody, loginBody } from '../routes/auth.routes.js';
 
 const registerUser = async (
   request: FastifyRequest<{ Body: userBody }>,
@@ -25,14 +25,30 @@ const registerUser = async (
   if (!createdUser) {
     return reply.conflict('User already exists');
   } else {
-    return reply
-      .code(201)
-      .send({
-        email: createdUser.email,
-        name: createdUser.name,
-        isAdmin: createdUser.isAdmin,
-      });
+    return reply.code(201).send({
+      email: createdUser.email,
+      name: createdUser.name,
+      isAdmin: createdUser.isAdmin,
+    });
   }
 };
 
-export { registerUser };
+const loginUser = async (
+  request: FastifyRequest<{ Body: loginBody }>,
+  reply: FastifyReply,
+) => {
+  const { email, password } = request.body;
+  const payload = await authService.loginUser(email, password);
+
+  if (payload === null) {
+    return reply.unauthorized('Invalid email or password');
+  }
+  const token = await reply.jwtSign(payload);
+
+  return reply.code(200).send({
+    token: token,
+    user: { isAdmin: payload.isAdmin },
+  });
+};
+
+export { registerUser, loginUser };
