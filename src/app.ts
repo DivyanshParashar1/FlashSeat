@@ -39,6 +39,16 @@ server.after(() => {
       expiresIn: server.config.JWT_EXPIRY,
     },
   });
+  server.decorate('authenticate', async function (request, reply) {
+    try {
+      await request.jwtVerify();
+    } catch (err) {
+      reply.send(err);
+    }
+  });
+  server.decorate('requireAdmin', async function (request, reply) {
+    if (!request.user.isAdmin) reply.forbidden();
+  });
 });
 
 server.register(sensible, {
