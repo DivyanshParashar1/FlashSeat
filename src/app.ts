@@ -57,10 +57,12 @@ server.register(sensible, {
 
 // route import
 import authRoutes from './routes/auth.routes.js';
+import eventsRoute from './routes/events.routes.js';
 
 // routes
 
 server.register(authRoutes, { prefix: '/api/v1/auth' });
+server.register(eventsRoute, { prefix: '/api/v1/events' });
 
 server.get('/health', async () => {
   return { status: 'ok' };
