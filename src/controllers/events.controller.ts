@@ -6,10 +6,20 @@ export const listEvents = async (
   reply: FastifyReply,
 ) => {
   const event = await eventsService.liveEvents();
-  if (!event[0]) {
-    reply.conflict('No events live, or no seats available');
-  }
   return reply.code(200).send({
     events: event,
   });
+};
+
+export const getSeatMap = async (
+  request: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) => {
+  const id = request.params.id;
+  const eventExists = await eventsService.eventExists(id);
+  if (!eventExists) {
+    return reply.notFound('Event not found');
+  }
+  const seats = await eventsService.getSeatMap(id);
+  return reply.code(200).send({ seats });
 };

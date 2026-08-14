@@ -22,6 +22,33 @@ const eventsResponseSchema = {
   },
 };
 
+const seatsResponseSchema = {
+  type: 'object',
+  required: ['seats'],
+  properties: {
+    seats: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'seatNumber', 'price', 'status'],
+        properties: {
+          id: { type: 'string' },
+          seatNumber: { type: 'string' },
+          price: { type: 'integer' },
+          status: { type: 'string', enum: ['available', 'held', 'sold'] },
+        },
+      },
+    },
+  },
+};
+const seatsParamsSchema = {
+  type: 'object',
+  required: ['id'],
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+  },
+};
+
 const eventsRoute: FastifyPluginAsync = async (fastify) => {
   fastify.get(
     '/',
@@ -33,6 +60,18 @@ const eventsRoute: FastifyPluginAsync = async (fastify) => {
       },
     },
     eventsController.listEvents,
+  );
+  fastify.get<{ Params: { id: string } }>(
+    '/:id/seats',
+    {
+      schema: {
+        params: seatsParamsSchema,
+        response: {
+          '2xx': seatsResponseSchema,
+        },
+      },
+    },
+    eventsController.getSeatMap,
   );
 };
 
