@@ -43,7 +43,7 @@ server.after(() => {
     try {
       await request.jwtVerify();
     } catch (err) {
-      reply.send(err);
+      return reply.send(err);
     }
   });
   server.decorate('requireAdmin', async function (request, reply) {
@@ -58,8 +58,10 @@ server.register(sensible, {
 // route import
 import authRoutes from './routes/auth.routes.js';
 import eventsRoute from './routes/events.routes.js';
+import reservationRoutes from './routes/reservations.routes.js';
 
 // routes
+server.register(reservationRoutes, { prefix: '/api/v1' });
 
 server.register(authRoutes, { prefix: '/api/v1/auth' });
 server.register(eventsRoute, { prefix: '/api/v1/events' });
