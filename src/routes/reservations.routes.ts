@@ -47,6 +47,7 @@ const reservationRoutes: FastifyPluginAsync = async (fastify) => {
         params: createReservationParamsSchema,
         body: createReservationBodySchema,
         response: {
+          200: createReservationResponseSchema,
           201: createReservationResponseSchema,
         },
       },

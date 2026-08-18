@@ -4,7 +4,7 @@ import { reservations } from '../db/schema/reservations.schema.js';
 import { reservationSeats } from '../db/schema/reservation_seats.schema.js';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-const HOLD_CONSTRAINT = 'reservations_idempotency_key_unique';
+const HOLD_CONSTRAINT = 'reservations_user_idempotency_key_unique';
 
 const isUniqueViolation = (err: unknown, constraint: string): boolean => {
   for (let e: unknown = err; e != null; e = (e as { cause?: unknown }).cause) {
@@ -32,6 +32,15 @@ export class SeatsUnavailableError extends Error {
   }
 }
 
+export class IdempotencyKeyReuseError extends Error {
+  constructor(
+    message = 'This idempotency key was already used with different seats',
+  ) {
+    super(message);
+    this.name = 'IdempotencyKeyReuseError';
+  }
+}
+
 export interface CreateReservationInput {
   eventId: string;
   userId: string;
@@ -51,7 +60,7 @@ export const createReservation = async (
   const { eventId, userId, seatIds, idempotencyKey } = input;
 
   const existing = await findByIdempotencyKey(idempotencyKey, userId);
-  if (existing) return existing;
+  if (existing) return replay(existing, seatIds);
 
   try {
     return await db.transaction(async (tx) => {
@@ -60,7 +69,6 @@ export const createReservation = async (
       const rows = await tx
         .select({
           id: seats.id,
-          status: seats.status,
           isGrabbable: sql<boolean>`
                 case
                 when (${seats.status} = 'held' and ${seats.heldUntil} < now()) or ${seats.status} = 'available' 
@@ -115,28 +123,57 @@ export const createReservation = async (
   } catch (err) {
     if (isUniqueViolation(err, HOLD_CONSTRAINT)) {
       const winner = await findByIdempotencyKey(idempotencyKey, userId);
-      if (winner) return winner;
+      if (winner) return replay(winner, seatIds);
     }
     throw err;
   }
 };
 
+interface ExistingReservation {
+  reservationId: string;
+  heldUntil: Date;
+  seatIds: string[];
+}
+
+/** Same key + same seats = a genuine retry. Same key + different seats = a
+ *  client bug or key collision, and must not silently return the old hold. */
+const replay = (
+  existing: ExistingReservation,
+  requestedSeatIds: string[],
+): ReservationResult => {
+  const a = [...existing.seatIds].sort().join(',');
+  const b = [...requestedSeatIds].sort().join(',');
+  if (a !== b) throw new IdempotencyKeyReuseError();
+
+  return {
+    reservationId: existing.reservationId,
+    heldUntil: existing.heldUntil,
+    replayed: true,
+  };
+};
+
 const findByIdempotencyKey = async (
   idempotencyKey: string,
   userId: string,
-): Promise<ReservationResult | null> => {
+): Promise<ExistingReservation | null> => {
   const result = await db
     .select({
       reservationId: reservations.id,
       heldUntil: reservations.expiresAt,
+      seatIds: sql<string[]>`array_agg(${reservationSeats.seatId}::text)`,
     })
     .from(reservations)
+    .innerJoin(
+      reservationSeats,
+      eq(reservationSeats.reservationId, reservations.id),
+    )
     .where(
       and(
         eq(reservations.userId, userId),
         eq(reservations.idempotencyKey, idempotencyKey),
       ),
     )
+    .groupBy(reservations.id)
     .limit(1);
 
   const row = result[0];
@@ -144,6 +181,6 @@ const findByIdempotencyKey = async (
   return {
     reservationId: row.reservationId,
     heldUntil: row.heldUntil,
-    replayed: true,
+    seatIds: row.seatIds,
   };
 };
