@@ -7,13 +7,25 @@ import jwt from '@fastify/jwt';
 
 const schema = {
   type: 'object',
-  required: ['PORT', 'DATABASE_URL', 'ORIGINS', 'JWT_SECRET', 'JWT_EXPIRY'],
+  required: [
+    'PORT',
+    'DATABASE_URL',
+    'ORIGINS',
+    'JWT_SECRET',
+    'JWT_EXPIRY',
+    'RESERVATION_LOCK_STRATEGY',
+  ],
   properties: {
     PORT: { type: 'string', default: '3000' },
     DATABASE_URL: { type: 'string' },
     ORIGINS: { type: 'string', default: '*' },
     JWT_SECRET: { type: 'string' },
     JWT_EXPIRY: { type: 'string', default: '1h' },
+    RESERVATION_LOCK_STRATEGY: {
+      type: 'string',
+      enum: ['pessimistic', 'optimistic'],
+      default: 'pessimistic',
+    },
   },
 };
 

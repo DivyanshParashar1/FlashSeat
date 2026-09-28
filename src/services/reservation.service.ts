@@ -2,7 +2,7 @@ import { db } from '../db/index.js';
 import { seats } from '../db/schema/seats.schema.js';
 import { reservations } from '../db/schema/reservations.schema.js';
 import { reservationSeats } from '../db/schema/reservation_seats.schema.js';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql, lt, or } from 'drizzle-orm';
 
 const HOLD_CONSTRAINT = 'reservations_user_idempotency_key_unique';
 
@@ -54,7 +54,7 @@ export interface ReservationResult {
   replayed: boolean;
 }
 
-export const createReservation = async (
+const createReservationPessimistic = async (
   input: CreateReservationInput,
 ): Promise<ReservationResult> => {
   const { eventId, userId, seatIds, idempotencyKey } = input;
@@ -127,6 +127,92 @@ export const createReservation = async (
     }
     throw err;
   }
+};
+
+const createReservationOptimistic = async (
+  input: CreateReservationInput,
+): Promise<ReservationResult> => {
+  const { eventId, userId, seatIds, idempotencyKey } = input;
+
+  const existing = await findByIdempotencyKey(idempotencyKey, userId);
+  if (existing) return replay(existing, seatIds);
+
+  try {
+    return await db.transaction(async (tx) => {
+      const holdExpiry = sql`now() + interval '8 minutes'`;
+
+      const grabbed = await tx
+        .update(seats)
+        .set({
+          status: 'held',
+          heldBy: userId,
+          heldUntil: holdExpiry,
+          version: sql`${seats.version} + 1`,
+        })
+        .where(
+          and(
+            eq(seats.eventId, eventId),
+            inArray(seats.id, seatIds),
+            or(
+              eq(seats.status, 'available'),
+              and(eq(seats.status, 'held'), lt(seats.heldUntil, sql`now()`)),
+            ),
+          ),
+        )
+        .returning({ id: seats.id });
+
+      if (grabbed.length !== seatIds.length) {
+        const found = await tx
+          .select({ id: seats.id })
+          .from(seats)
+          .where(and(eq(seats.eventId, eventId), inArray(seats.id, seatIds)));
+
+        if (found.length !== seatIds.length) throw new SeatsNotFoundError();
+        throw new SeatsUnavailableError();
+      }
+
+      const inserted = await tx
+        .insert(reservations)
+        .values({
+          userId,
+          eventId,
+          status: 'pending',
+          expiresAt: holdExpiry,
+          idempotencyKey,
+        })
+        .returning({ id: reservations.id, expiresAt: reservations.expiresAt });
+
+      const reservation = inserted[0];
+      if (!reservation) throw new Error('Insert ... Returning produced no row');
+
+      await tx
+        .insert(reservationSeats)
+        .values(
+          seatIds.map((seatId) => ({ reservationId: reservation.id, seatId })),
+        );
+
+      return {
+        reservationId: reservation.id,
+        heldUntil: reservation.expiresAt,
+        replayed: false,
+      };
+    });
+  } catch (err) {
+    if (isUniqueViolation(err, HOLD_CONSTRAINT)) {
+      const winner = await findByIdempotencyKey(idempotencyKey, userId);
+      if (winner) return replay(winner, seatIds);
+    }
+    throw err;
+  }
+};
+
+export const createReservation = (
+  input: CreateReservationInput,
+  strategy: 'pessimistic' | 'optimistic',
+): Promise<ReservationResult> => {
+  return strategy === 'optimistic'
+    ? createReservationOptimistic(input)
+    : createReservationPessimistic(input);
 };
 
 interface ExistingReservation {

@@ -20,7 +20,10 @@ export const createReservation = async (
       seatIds,
       idempotencyKey,
     };
-    const result = await reservationService.createReservation(input);
+    const result = await reservationService.createReservation(
+      input,
+      request.server.config.RESERVATION_LOCK_STRATEGY,
+    );
     return reply.code(result.replayed ? 200 : 201).send({
       reservationId: result.reservationId,
       heldUntil: result.heldUntil,
