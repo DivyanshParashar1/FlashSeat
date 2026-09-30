@@ -54,6 +54,22 @@ const reservationRoutes: FastifyPluginAsync = async (fastify) => {
     },
     reservationController.createReservation,
   );
+
+  fastify.delete<{ Params: { id: string } }>(
+    '/reservations/:id',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+        response: { 204: { type: 'null' } },
+      },
+    },
+    reservationController.releaseReservation,
+  );
 };
 
 export default reservationRoutes;

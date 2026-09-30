@@ -270,3 +270,89 @@ const findByIdempotencyKey = async (
     seatIds: row.seatIds,
   };
 };
+export class ReservationNotFoundError extends Error {
+  constructor(message = 'Reservation not found') {
+    super(message);
+    this.name = 'ReservationNotFoundError';
+  }
+}
+
+export class ReservationNotReleasableError extends Error {
+  constructor(
+    message = 'Reservation cannot be released — it is already confirmed',
+  ) {
+    super(message);
+    this.name = 'ReservationNotReleasableError';
+  }
+}
+
+export interface ReleaseReservationInput {
+  reservationId: string;
+  userId: string;
+}
+
+export const releaseReservation = async (
+  input: ReleaseReservationInput,
+): Promise<{ released: boolean }> => {
+  const { reservationId, userId } = input;
+
+  return await db.transaction(async (tx) => {
+    // Lock the reservation row to prevent races with checkout/sweeper.
+    const rows = await tx
+      .select({
+        id: reservations.id,
+        userId: reservations.userId,
+        status: reservations.status,
+      })
+      .from(reservations)
+      .where(eq(reservations.id, reservationId))
+      .for('update');
+
+    const reservation = rows[0];
+    // Not found OR not owned by this user → same response (don't leak existence).
+    if (!reservation || reservation.userId !== userId) {
+      throw new ReservationNotFoundError();
+    }
+
+    // Idempotent: already terminal → 204 with released=false.
+    // Note: reservation status enum has no 'cancelled' — user-cancelled and
+    // sweeper-expired both collapse to 'expired'. Documented in interview_prep.
+    if (reservation.status === 'expired' || reservation.status === 'failed') {
+      return { released: false };
+    }
+
+    // Paid → cannot release via this endpoint.
+    if (reservation.status === 'confirmed') {
+      throw new ReservationNotReleasableError();
+    }
+
+    // Status is 'pending'. Flip reservation + release seats.
+    await tx
+      .update(reservations)
+      .set({ status: 'expired' })
+      .where(eq(reservations.id, reservationId));
+
+    await tx
+      .update(seats)
+      .set({
+        status: 'available',
+        heldBy: null,
+        heldUntil: null,
+        version: sql`${seats.version} + 1`,
+      })
+      .where(
+        and(
+          eq(seats.heldBy, userId),
+          inArray(
+            seats.id,
+            tx
+              .select({ id: reservationSeats.seatId })
+              .from(reservationSeats)
+              .where(eq(reservationSeats.reservationId, reservationId)),
+          ),
+        ),
+      );
+
+    return { released: true };
+  });
+};

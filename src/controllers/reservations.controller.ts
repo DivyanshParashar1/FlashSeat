@@ -41,3 +41,27 @@ export const createReservation = async (
     throw err;
   }
 };
+
+export const releaseReservation = async (
+  request: FastifyRequest<{ Params: { id: string } }>,
+  reply: FastifyReply,
+) => {
+  const reservationId = request.params.id;
+  const userId = request.user.userId;
+
+  try {
+    await reservationService.releaseReservation({
+      reservationId,
+      userId,
+    });
+    return reply.code(204).send();
+  } catch (err) {
+    if (err instanceof reservationService.ReservationNotFoundError) {
+      return reply.notFound(err.message);
+    }
+    if (err instanceof reservationService.ReservationNotReleasableError) {
+      return reply.conflict(err.message);
+    }
+    throw err;
+  }
+};
