@@ -2,6 +2,7 @@ import 'fastify';
 
 export declare module 'fastify' {
   interface FastifyInstance {
+    rawBody?: Buffer;
     config: {
       PORT: string;
       DATABASE_URL: string;
