@@ -5,6 +5,7 @@ import {
   timestamp,
   integer,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { seatStatusEnum } from './enums.schema.js';
 import { events } from './events.schema.js';
@@ -40,6 +41,10 @@ export const seats = pgTable(
         table.status,
       ),
       heldUntilIdx: index('held_until_idx').on(table.heldUntil),
+      eventSeatNumberUniqueIdx: uniqueIndex('event_seat_number_unique_idx').on(
+        table.eventId,
+        table.seatNumber,
+      ),
     };
   },
 );

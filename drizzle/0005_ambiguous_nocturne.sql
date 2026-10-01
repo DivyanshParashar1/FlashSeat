@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "event_seat_number_unique_idx" ON "seats" USING btree ("event_id","seat_number");
