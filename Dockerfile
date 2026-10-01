@@ -69,8 +69,9 @@ COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY --from=build /usr/src/app/dist ./dist
 
 
-# Expose the port that the application listens on.
 EXPOSE 8080
 
-# Run the application.
-CMD pnpm run start
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:${PORT:-8080}/health || exit 1
+
+CMD ["node", "dist/index.js"]
