@@ -39,7 +39,7 @@ export const razorpayWebhook = async (
   try {
     switch (event.event) {
       case 'payment.captured':
-        await handlePaymentCaptured(event, request.server.log);
+        await handlePaymentCaptured(request.server, event, request.server.log);
         break;
       case 'payment.failed':
         await handlePaymentFailed(event, request.server.log);

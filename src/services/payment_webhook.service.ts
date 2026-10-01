@@ -7,12 +7,16 @@ import { bookings } from '../db/schema/bookings.schema.js';
 import { processed_webhook_events } from '../db/schema/processed_webhook_events.schema.js';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { RazorpayWebhookEvent } from './webhook.service.js';
-import type { FastifyBaseLogger } from 'fastify';
+import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
+import { getRazorpay } from '../lib/razorpay.js';
 
 export const handlePaymentCaptured = async (
+  server: FastifyInstance,
   event: RazorpayWebhookEvent,
   log: FastifyBaseLogger,
-): Promise<{ status: 'processed' | 'duplicate' | 'orphaned' }> => {
+): Promise<{
+  status: 'processed' | 'duplicate' | 'orphaned' | 'refunded';
+}> => {
   const paymentEntity = event.payload.payment?.entity;
   const razorpayOrderId = paymentEntity?.order_id;
   const razorpayPaymentId = paymentEntity?.id;
@@ -52,13 +56,41 @@ export const handlePaymentCaptured = async (
       return { status: 'orphaned' as const };
     }
 
-    // 3. Expiry race (P2-8 will add refund logic here).
     if (row.reservationStatus !== 'pending') {
       log.warn(
-        { reservationId: row.reservationId, status: row.reservationStatus },
-        'payment.captured for non-pending reservation — expiry race',
+        {
+          reservationId: row.reservationId,
+          status: row.reservationStatus,
+          razorpayPaymentId,
+        },
+        'payment.captured for non-pending reservation — expiry race, initiating refund',
       );
-      return { status: 'orphaned' as const };
+      await tx
+        .update(payments)
+        .set({ status: 'failed', razorpayPaymentId })
+        .where(eq(payments.id, row.paymentId));
+
+      try {
+        const razorpay = getRazorpay(server);
+        const refund = await razorpay.payments.refund(razorpayPaymentId, {
+          speed: 'normal',
+          notes: {
+            reason: 'expiry_race',
+            reservationId: row.reservationId,
+          },
+        });
+        log.info(
+          { refundId: refund.id, razorpayPaymentId },
+          'refund initiated for orphaned payment',
+        );
+      } catch (err) {
+        log.error(
+          { err, razorpayPaymentId },
+          'refund failed; manual intervention required',
+        );
+      }
+
+      return { status: 'refunded' as const };
     }
 
     // 4. Flip payment → succeeded.
