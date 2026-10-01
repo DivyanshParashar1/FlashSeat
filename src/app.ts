@@ -91,6 +91,7 @@ import eventsRoute from './routes/events.routes.js';
 import reservationRoutes from './routes/reservations.routes.js';
 import bookingRoutes from './routes/bookings.routes.js';
 import adminRoutes from './routes/admin.routes.js';
+import paymentRoutes from './routes/payments.routes.js';
 
 // routes
 server.register(reservationRoutes, { prefix: '/api/v1' });
@@ -98,6 +99,7 @@ server.register(bookingRoutes, { prefix: '/api/v1' });
 server.register(authRoutes, { prefix: '/api/v1/auth' });
 server.register(eventsRoute, { prefix: '/api/v1/events' });
 server.register(adminRoutes, { prefix: '/api/v1/admin' });
+server.register(paymentRoutes, { prefix: '/api/v1/payments' });
 
 server.get('/health', async () => {
   return { status: 'ok' };

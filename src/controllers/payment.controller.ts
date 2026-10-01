@@ -24,3 +24,28 @@ export const createCheckout = async (
     throw err;
   }
 };
+
+export const verifyPayment = async (
+  request: FastifyRequest<{
+    Body: {
+      razorpayOrderId: string;
+      razorpayPaymentId: string;
+      razorpaySignature: string;
+    };
+  }>,
+  reply: FastifyReply,
+) => {
+  const userId = request.user.userId;
+  try {
+    const result = await paymentService.verifyPaymentSignature(request.server, {
+      ...request.body,
+      userId,
+    });
+    return reply.code(200).send(result);
+  } catch (err) {
+    if (err instanceof paymentService.InvalidPaymentSignatureError) {
+      return reply.unauthorized(err.message);
+    }
+    throw err;
+  }
+};
