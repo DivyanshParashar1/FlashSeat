@@ -3,6 +3,7 @@ import { seats } from '../db/schema/seats.schema.js';
 import { reservations } from '../db/schema/reservations.schema.js';
 import { reservationSeats } from '../db/schema/reservation_seats.schema.js';
 import { and, eq, inArray, sql, lt, or } from 'drizzle-orm';
+import { broadcast } from './seat_updates.service.js';
 
 const HOLD_CONSTRAINT = 'reservations_user_idempotency_key_unique';
 
@@ -63,63 +64,77 @@ const createReservationPessimistic = async (
   if (existing) return replay(existing, seatIds);
 
   try {
-    return await db.transaction(async (tx) => {
-      const holdExpiry = sql`now() + interval '8 minutes'`;
+    return await db
+      .transaction(async (tx) => {
+        const holdExpiry = sql`now() + interval '8 minutes'`;
 
-      const rows = await tx
-        .select({
-          id: seats.id,
-          isGrabbable: sql<boolean>`
+        const rows = await tx
+          .select({
+            id: seats.id,
+            isGrabbable: sql<boolean>`
                 case
                 when (${seats.status} = 'held' and ${seats.heldUntil} < now()) or ${seats.status} = 'available' 
                 then true
                 else false
                 end`,
-        })
-        .from(seats)
-        .where(and(eq(seats.eventId, eventId), inArray(seats.id, seatIds)))
-        .orderBy(seats.id)
-        .for('update');
+          })
+          .from(seats)
+          .where(and(eq(seats.eventId, eventId), inArray(seats.id, seatIds)))
+          .orderBy(seats.id)
+          .for('update');
 
-      if (rows.length !== seatIds.length) {
-        throw new SeatsNotFoundError();
-      }
+        if (rows.length !== seatIds.length) {
+          throw new SeatsNotFoundError();
+        }
 
-      if (!rows.every((r) => r.isGrabbable)) throw new SeatsUnavailableError();
-      await tx
-        .update(seats)
-        .set({
-          status: 'held',
-          heldBy: userId,
-          heldUntil: holdExpiry,
-          version: sql`${seats.version} + 1`,
-        })
-        .where(inArray(seats.id, seatIds));
+        if (!rows.every((r) => r.isGrabbable))
+          throw new SeatsUnavailableError();
+        await tx
+          .update(seats)
+          .set({
+            status: 'held',
+            heldBy: userId,
+            heldUntil: holdExpiry,
+            version: sql`${seats.version} + 1`,
+          })
+          .where(inArray(seats.id, seatIds));
 
-      const inserted = await tx
-        .insert(reservations)
-        .values({
-          userId,
-          eventId,
-          status: 'pending',
-          expiresAt: holdExpiry,
-          idempotencyKey,
-        })
-        .returning({ id: reservations.id, expiresAt: reservations.expiresAt });
-      const reservation = inserted[0];
-      if (!reservation) throw new Error('Insert ... Returning produced no row');
-      await tx
-        .insert(reservationSeats)
-        .values(
-          seatIds.map((seatId) => ({ reservationId: reservation.id, seatId })),
-        );
+        const inserted = await tx
+          .insert(reservations)
+          .values({
+            userId,
+            eventId,
+            status: 'pending',
+            expiresAt: holdExpiry,
+            idempotencyKey,
+          })
+          .returning({
+            id: reservations.id,
+            expiresAt: reservations.expiresAt,
+          });
+        const reservation = inserted[0];
+        if (!reservation)
+          throw new Error('Insert ... Returning produced no row');
+        await tx
+          .insert(reservationSeats)
+          .values(
+            seatIds.map((seatId) => ({
+              reservationId: reservation.id,
+              seatId,
+            })),
+          );
 
-      return {
-        reservationId: reservation.id,
-        heldUntil: reservation.expiresAt,
-        replayed: false,
-      };
-    });
+        return {
+          reservationId: reservation.id,
+          heldUntil: reservation.expiresAt,
+          replayed: false,
+        };
+      })
+      .then((result) => {
+        for (const seatId of seatIds)
+          broadcast(eventId, { seatId, status: 'held' });
+        return result;
+      });
   } catch (err) {
     if (isUniqueViolation(err, HOLD_CONSTRAINT)) {
       const winner = await findByIdempotencyKey(idempotencyKey, userId);
@@ -138,65 +153,78 @@ const createReservationOptimistic = async (
   if (existing) return replay(existing, seatIds);
 
   try {
-    return await db.transaction(async (tx) => {
-      const holdExpiry = sql`now() + interval '8 minutes'`;
+    return await db
+      .transaction(async (tx) => {
+        const holdExpiry = sql`now() + interval '8 minutes'`;
 
-      const grabbed = await tx
-        .update(seats)
-        .set({
-          status: 'held',
-          heldBy: userId,
-          heldUntil: holdExpiry,
-          version: sql`${seats.version} + 1`,
-        })
-        .where(
-          and(
-            eq(seats.eventId, eventId),
-            inArray(seats.id, seatIds),
-            or(
-              eq(seats.status, 'available'),
-              and(eq(seats.status, 'held'), lt(seats.heldUntil, sql`now()`)),
+        const grabbed = await tx
+          .update(seats)
+          .set({
+            status: 'held',
+            heldBy: userId,
+            heldUntil: holdExpiry,
+            version: sql`${seats.version} + 1`,
+          })
+          .where(
+            and(
+              eq(seats.eventId, eventId),
+              inArray(seats.id, seatIds),
+              or(
+                eq(seats.status, 'available'),
+                and(eq(seats.status, 'held'), lt(seats.heldUntil, sql`now()`)),
+              ),
             ),
-          ),
-        )
-        .returning({ id: seats.id });
+          )
+          .returning({ id: seats.id });
 
-      if (grabbed.length !== seatIds.length) {
-        const found = await tx
-          .select({ id: seats.id })
-          .from(seats)
-          .where(and(eq(seats.eventId, eventId), inArray(seats.id, seatIds)));
+        if (grabbed.length !== seatIds.length) {
+          const found = await tx
+            .select({ id: seats.id })
+            .from(seats)
+            .where(and(eq(seats.eventId, eventId), inArray(seats.id, seatIds)));
 
-        if (found.length !== seatIds.length) throw new SeatsNotFoundError();
-        throw new SeatsUnavailableError();
-      }
+          if (found.length !== seatIds.length) throw new SeatsNotFoundError();
+          throw new SeatsUnavailableError();
+        }
 
-      const inserted = await tx
-        .insert(reservations)
-        .values({
-          userId,
-          eventId,
-          status: 'pending',
-          expiresAt: holdExpiry,
-          idempotencyKey,
-        })
-        .returning({ id: reservations.id, expiresAt: reservations.expiresAt });
+        const inserted = await tx
+          .insert(reservations)
+          .values({
+            userId,
+            eventId,
+            status: 'pending',
+            expiresAt: holdExpiry,
+            idempotencyKey,
+          })
+          .returning({
+            id: reservations.id,
+            expiresAt: reservations.expiresAt,
+          });
 
-      const reservation = inserted[0];
-      if (!reservation) throw new Error('Insert ... Returning produced no row');
+        const reservation = inserted[0];
+        if (!reservation)
+          throw new Error('Insert ... Returning produced no row');
 
-      await tx
-        .insert(reservationSeats)
-        .values(
-          seatIds.map((seatId) => ({ reservationId: reservation.id, seatId })),
-        );
+        await tx
+          .insert(reservationSeats)
+          .values(
+            seatIds.map((seatId) => ({
+              reservationId: reservation.id,
+              seatId,
+            })),
+          );
 
-      return {
-        reservationId: reservation.id,
-        heldUntil: reservation.expiresAt,
-        replayed: false,
-      };
-    });
+        return {
+          reservationId: reservation.id,
+          heldUntil: reservation.expiresAt,
+          replayed: false,
+        };
+      })
+      .then((result) => {
+        for (const seatId of seatIds)
+          broadcast(eventId, { seatId, status: 'held' });
+        return result;
+      });
   } catch (err) {
     if (isUniqueViolation(err, HOLD_CONSTRAINT)) {
       const winner = await findByIdempotencyKey(idempotencyKey, userId);
@@ -326,13 +354,12 @@ export const releaseReservation = async (
       throw new ReservationNotReleasableError();
     }
 
-    // Status is 'pending'. Flip reservation + release seats.
     await tx
       .update(reservations)
       .set({ status: 'expired' })
       .where(eq(reservations.id, reservationId));
 
-    await tx
+    const released = await tx
       .update(seats)
       .set({
         status: 'available',
@@ -351,7 +378,12 @@ export const releaseReservation = async (
               .where(eq(reservationSeats.reservationId, reservationId)),
           ),
         ),
-      );
+      )
+      .returning({ id: seats.id, eventId: seats.eventId });
+
+    for (const seat of released) {
+      broadcast(seat.eventId, { seatId: seat.id, status: 'available' });
+    }
 
     return { released: true };
   });

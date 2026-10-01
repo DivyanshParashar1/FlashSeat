@@ -1,5 +1,6 @@
 import * as eventsController from '../controllers/events.controller.js';
 import { type FastifyPluginAsync } from 'fastify';
+import { streamSeatUpdates } from '../controllers/seat_updates.controller.js';
 
 const eventsResponseSchema = {
   type: 'object',
@@ -72,6 +73,11 @@ const eventsRoute: FastifyPluginAsync = async (fastify) => {
       },
     },
     eventsController.getSeatMap,
+  );
+  fastify.get<{ Params: { id: string } }>(
+    '/:id/seat-updates',
+    { schema: { params: seatsParamsSchema } },
+    streamSeatUpdates,
   );
 };
 

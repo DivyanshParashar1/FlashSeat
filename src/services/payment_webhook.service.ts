@@ -9,6 +9,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import type { RazorpayWebhookEvent } from './webhook.service.js';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { getRazorpay } from '../lib/razorpay.js';
+import { broadcast } from './seat_updates.service.js';
 
 export const handlePaymentCaptured = async (
   server: FastifyInstance,
@@ -105,7 +106,6 @@ export const handlePaymentCaptured = async (
       .set({ status: 'confirmed' })
       .where(eq(reservations.id, row.reservationId));
 
-    // 6. Flip seats → sold, clear hold columns.
     const soldSeats = await tx
       .update(seats)
       .set({
@@ -123,7 +123,11 @@ export const handlePaymentCaptured = async (
             .where(eq(reservationSeats.reservationId, row.reservationId)),
         ),
       )
-      .returning({ id: seats.id });
+      .returning({ id: seats.id, eventId: seats.eventId });
+
+    for (const s of soldSeats) {
+      broadcast(s.eventId, { seatId: s.id, status: 'sold' });
+    }
 
     // 7. Insert booking rows.
     if (soldSeats.length > 0) {
@@ -217,7 +221,7 @@ export const handlePaymentFailed = async (
       .set({ status: 'failed' })
       .where(eq(reservations.id, row.reservationId));
 
-    await tx
+    const releasedSeats = await tx
       .update(seats)
       .set({
         status: 'available',
@@ -233,7 +237,12 @@ export const handlePaymentFailed = async (
             .from(reservationSeats)
             .where(eq(reservationSeats.reservationId, row.reservationId)),
         ),
-      );
+      )
+      .returning({ id: seats.id, eventId: seats.eventId });
+
+    for (const s of releasedSeats) {
+      broadcast(s.eventId, { seatId: s.id, status: 'available' });
+    }
 
     log.info(
       { eventId: event.id, reservationId: row.reservationId },
