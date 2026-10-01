@@ -1,5 +1,6 @@
 import { type FastifyPluginAsync } from 'fastify';
 import * as reservationController from '../controllers/reservations.controller.js';
+import * as paymentController from '../controllers/payment.controller.js';
 
 const createReservationParamsSchema = {
   type: 'object',
@@ -69,6 +70,32 @@ const reservationRoutes: FastifyPluginAsync = async (fastify) => {
       },
     },
     reservationController.releaseReservation,
+  );
+  fastify.post<{ Params: { id: string } }>(
+    '/reservations/:id/checkout',
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id'],
+          properties: { id: { type: 'string', format: 'uuid' } },
+        },
+        response: {
+          200: {
+            type: 'object',
+            required: ['orderId', 'amount', 'currency', 'keyId'],
+            properties: {
+              orderId: { type: 'string' },
+              amount: { type: 'integer', minimum: 0 },
+              currency: { type: 'string', const: 'INR' },
+              keyId: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    paymentController.createCheckout,
   );
 };
 

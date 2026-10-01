@@ -11,18 +11,13 @@ import { paymentStatusEnum } from './enums.schema.js';
 export const payments = pgTable('payments', {
   id: uuid('id').defaultRandom().primaryKey(),
   reservationId: uuid('reservation_id')
-    // RESTRICT: a payment is a financial record. Never let it be auto-deleted
-    // as a side effect of deleting its reservation — that would erase money
-    // movement from the books. Deleting the reservation is blocked while a
-    // payment row points at it.
     .references(() => reservations.id, { onDelete: 'restrict' })
-    .notNull(),
-  amount: integer('amount').notNull(), // In cents
-  stripePaymentIntentId: varchar('stripe_payment_intent_id', { length: 255 }),
-  status: paymentStatusEnum('status').default('pending').notNull(),
-  idempotencyKey: varchar('idempotency_key', { length: 255 })
     .notNull()
-    .unique(), // CRITICAL for webhook safety
+    .unique(), // One payment attempt per reservation; checkout idempotent by construction
+  amount: integer('amount').notNull(), // paise (INR)
+  razorpayOrderId: varchar('razorpay_order_id', { length: 255 }).unique(),
+  razorpayPaymentId: varchar('razorpay_payment_id', { length: 255 }), // set by webhook
+  status: paymentStatusEnum('status').default('pending').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .defaultNow()
     .notNull(),
