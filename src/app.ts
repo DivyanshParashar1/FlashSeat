@@ -4,6 +4,7 @@ import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import jwt from '@fastify/jwt';
+import { startSweeper } from './services/sweeper.service.js';
 
 const schema = {
   type: 'object',
@@ -26,6 +27,7 @@ const schema = {
       enum: ['pessimistic', 'optimistic'],
       default: 'pessimistic',
     },
+    SWEEPER_INTERVAL_MS: { type: 'number', default: 30000 },
   },
 };
 
@@ -67,14 +69,25 @@ server.register(sensible, {
   sharedSchemaId: 'HttpError',
 });
 
+let sweeper: { stop: () => void } | undefined;
+
+server.addHook('onClose', async () => {
+  sweeper?.stop();
+});
+
+server.ready(() => {
+  sweeper = startSweeper(server.config.SWEEPER_INTERVAL_MS, server.log);
+});
+
 // route import
 import authRoutes from './routes/auth.routes.js';
 import eventsRoute from './routes/events.routes.js';
 import reservationRoutes from './routes/reservations.routes.js';
+import bookingRoutes from './routes/bookings.routes.js';
 
 // routes
 server.register(reservationRoutes, { prefix: '/api/v1' });
-
+server.register(bookingRoutes, { prefix: '/api/v1' });
 server.register(authRoutes, { prefix: '/api/v1/auth' });
 server.register(eventsRoute, { prefix: '/api/v1/events' });
 
