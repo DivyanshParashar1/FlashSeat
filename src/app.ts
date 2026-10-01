@@ -15,6 +15,9 @@ const schema = {
     'JWT_SECRET',
     'JWT_EXPIRY',
     'RESERVATION_LOCK_STRATEGY',
+    'RAZORPAY_TEST_KEY',
+    'RAZORPAY_TEST_KEY_SECRET',
+    'RAZORPAY_WEBHOOK_SECRET',
   ],
   properties: {
     PORT: { type: 'string', default: '3000' },
@@ -28,6 +31,9 @@ const schema = {
       default: 'pessimistic',
     },
     SWEEPER_INTERVAL_MS: { type: 'number', default: 30000 },
+    RAZORPAY_TEST_KEY: { type: 'string' },
+    RAZORPAY_TEST_KEY_SECRET: { type: 'string' },
+    RAZORPAY_WEBHOOK_SECRET: { type: 'string' },
   },
 };
 

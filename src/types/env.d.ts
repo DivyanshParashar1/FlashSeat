@@ -10,6 +10,9 @@ export declare module 'fastify' {
       JWT_EXPIRY: string;
       RESERVATION_LOCK_STRATEGY: 'pessimistic' | 'optimistic';
       SWEEPER_INTERVAL_MS: number;
+      RAZORPAY_TEST_KEY: string;
+      RAZORPAY_TEST_KEY_SECRET: string;
+      RAZORPAY_WEBHOOK_SECRET: string;
     };
   }
 }
