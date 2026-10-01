@@ -1,0 +1,126 @@
+import { db } from '../db/index.js';
+import { payments } from '../db/schema/payments.schema.js';
+import { reservations } from '../db/schema/reservations.schema.js';
+import { reservationSeats } from '../db/schema/reservation_seats.schema.js';
+import { seats } from '../db/schema/seats.schema.js';
+import { bookings } from '../db/schema/bookings.schema.js';
+import { processed_webhook_events } from '../db/schema/processed_webhook_events.schema.js';
+import { eq, inArray, sql } from 'drizzle-orm';
+import type { RazorpayWebhookEvent } from './webhook.service.js';
+import type { FastifyBaseLogger } from 'fastify';
+
+export const handlePaymentCaptured = async (
+  event: RazorpayWebhookEvent,
+  log: FastifyBaseLogger,
+): Promise<{ status: 'processed' | 'duplicate' | 'orphaned' }> => {
+  const paymentEntity = event.payload.payment?.entity;
+  const razorpayOrderId = paymentEntity?.order_id;
+  const razorpayPaymentId = paymentEntity?.id;
+  if (!razorpayOrderId || !razorpayPaymentId) {
+    throw new Error('payment.captured event missing order_id or payment_id');
+  }
+
+  return await db.transaction(async (tx) => {
+    // 1. Dedup — insert event, zero rows means we've seen it.
+    const dedup = await tx
+      .insert(processed_webhook_events)
+      .values({ razorpayEventId: event.id })
+      .onConflictDoNothing({ target: processed_webhook_events.razorpayEventId })
+      .returning({ id: processed_webhook_events.razorpayEventId });
+    if (dedup.length === 0) {
+      log.info({ eventId: event.id }, 'webhook duplicate — already processed');
+      return { status: 'duplicate' as const };
+    }
+
+    // 2. Find the payment row + reservation (locked).
+    const rows = await tx
+      .select({
+        paymentId: payments.id,
+        reservationId: payments.reservationId,
+        reservationStatus: reservations.status,
+      })
+      .from(payments)
+      .innerJoin(reservations, eq(reservations.id, payments.reservationId))
+      .where(eq(payments.razorpayOrderId, razorpayOrderId))
+      .for('update');
+
+    const row = rows[0];
+    if (!row) {
+      // Payment row doesn't exist — maybe webhook came for an order we don't know
+      // about. Record the event as processed so Razorpay stops retrying.
+      log.warn({ razorpayOrderId }, 'webhook for unknown order; dropping');
+      return { status: 'orphaned' as const };
+    }
+
+    // 3. Expiry race (P2-8 will add refund logic here).
+    if (row.reservationStatus !== 'pending') {
+      log.warn(
+        { reservationId: row.reservationId, status: row.reservationStatus },
+        'payment.captured for non-pending reservation — expiry race',
+      );
+      return { status: 'orphaned' as const };
+    }
+
+    // 4. Flip payment → succeeded.
+    await tx
+      .update(payments)
+      .set({ status: 'succeeded', razorpayPaymentId })
+      .where(eq(payments.id, row.paymentId));
+
+    // 5. Flip reservation → confirmed.
+    await tx
+      .update(reservations)
+      .set({ status: 'confirmed' })
+      .where(eq(reservations.id, row.reservationId));
+
+    // 6. Flip seats → sold, clear hold columns.
+    const soldSeats = await tx
+      .update(seats)
+      .set({
+        status: 'sold',
+        heldBy: null,
+        heldUntil: null,
+        version: sql`${seats.version} + 1`,
+      })
+      .where(
+        inArray(
+          seats.id,
+          tx
+            .select({ id: reservationSeats.seatId })
+            .from(reservationSeats)
+            .where(eq(reservationSeats.reservationId, row.reservationId)),
+        ),
+      )
+      .returning({ id: seats.id });
+
+    // 7. Insert booking rows.
+    if (soldSeats.length > 0) {
+      // Fetch userId once from the reservation.
+      const resv = await tx
+        .select({ userId: reservations.userId })
+        .from(reservations)
+        .where(eq(reservations.id, row.reservationId));
+      const userId = resv[0]?.userId;
+      if (!userId)
+        throw new Error('reservation missing userId during booking creation');
+
+      await tx.insert(bookings).values(
+        soldSeats.map((s) => ({
+          reservationId: row.reservationId,
+          userId,
+          seatId: s.id,
+        })),
+      );
+    }
+
+    log.info(
+      {
+        eventId: event.id,
+        reservationId: row.reservationId,
+        seats: soldSeats.length,
+      },
+      'payment.captured processed',
+    );
+    return { status: 'processed' as const };
+  });
+};

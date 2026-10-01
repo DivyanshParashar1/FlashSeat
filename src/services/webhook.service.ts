@@ -9,8 +9,12 @@ export class InvalidWebhookSignatureError extends Error {
 }
 
 export interface RazorpayWebhookEvent {
+  id: string; // event id (e.g. "evt_...")
   event: string; // e.g. "payment.captured"
-  payload: Record<string, unknown>;
+  payload: {
+    payment?: { entity?: { id?: string; order_id?: string; amount?: number } };
+    [k: string]: unknown;
+  };
 }
 
 export const verifyWebhookSignature = (

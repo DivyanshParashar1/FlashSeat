@@ -1,5 +1,6 @@
 import * as webhookService from '../services/webhook.service.js';
 import { type FastifyReply, type FastifyRequest } from 'fastify';
+import { handlePaymentCaptured } from '../services/payment_webhook.service.js';
 
 export const razorpayWebhook = async (
   request: FastifyRequest & { rawBody?: Buffer },
@@ -32,6 +33,24 @@ export const razorpayWebhook = async (
     'razorpay webhook received',
   );
 
-  // TODO(P2-6/P2-7): dispatch to payment.captured / payment.failed handlers
+  try {
+    switch (event.event) {
+      case 'payment.captured':
+        await handlePaymentCaptured(event, request.server.log);
+        break;
+      default:
+        request.server.log.info(
+          { eventType: event.event },
+          'razorpay webhook unhandled event',
+        );
+    }
+  } catch (err) {
+    request.server.log.error(
+      { err, eventId: event.id },
+      'webhook handler failed',
+    );
+    throw err; // falls through to Fastify's 500 → Razorpay retries
+  }
+
   return reply.code(200).send({ status: 'ok' });
 };
