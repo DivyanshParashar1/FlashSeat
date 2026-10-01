@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import Fastify from 'fastify';
 import fastifyEnv from '@fastify/env';
 import helmet from '@fastify/helmet';
@@ -38,7 +39,38 @@ const schema = {
 };
 
 export const server = Fastify({
-  logger: true,
+  logger: {
+    level: process.env.LOG_LEVEL ?? 'info',
+    redact: [
+      'req.headers.authorization',
+      'req.headers["x-razorpay-signature"]',
+      '*.razorpaySignature',
+      '*.razorpay_signature',
+      '*.password',
+    ],
+  },
+  genReqId: () => {
+    return crypto.randomUUID();
+  },
+  disableRequestLogging: false,
+});
+
+const SLOW_REQUEST_MS = Number(process.env.SLOW_REQUEST_MS ?? 500);
+
+server.addHook('onResponse', async (request, reply) => {
+  const elapsed = reply.elapsedTime;
+  if (elapsed > SLOW_REQUEST_MS) {
+    request.log.warn(
+      {
+        reqId: request.id,
+        method: request.method,
+        url: request.url,
+        statusCode: reply.statusCode,
+        elapsedMs: elapsed,
+      },
+      'slow request',
+    );
+  }
 });
 
 server.register(fastifyEnv, {
