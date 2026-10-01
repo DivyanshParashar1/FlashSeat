@@ -5,7 +5,9 @@ import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import jwt from '@fastify/jwt';
+import rateLimit from '@fastify/rate-limit';
 import { startSweeper } from './services/sweeper.service.js';
+import { getRedis } from './lib/redis.js';
 
 const schema = {
   type: 'object',
@@ -103,6 +105,14 @@ server.after(() => {
   });
 });
 
+const redisClient = getRedis();
+server.register(rateLimit, {
+  global: false,
+  max: 100,
+  timeWindow: '1 minute',
+  ...(redisClient ? { redis: redisClient } : {}),
+});
+
 server.register(sensible, {
   sharedSchemaId: 'HttpError',
 });
@@ -125,8 +135,8 @@ import bookingRoutes from './routes/bookings.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import paymentRoutes from './routes/payments.routes.js';
 import webhookRoutes from './routes/webhooks.routes.js';
+import waitingRoomRoutes from './routes/waiting_room.routes.js';
 
-// routes
 server.register(reservationRoutes, { prefix: '/api/v1' });
 server.register(bookingRoutes, { prefix: '/api/v1' });
 server.register(authRoutes, { prefix: '/api/v1/auth' });
@@ -134,6 +144,7 @@ server.register(eventsRoute, { prefix: '/api/v1/events' });
 server.register(adminRoutes, { prefix: '/api/v1/admin' });
 server.register(paymentRoutes, { prefix: '/api/v1/payments' });
 server.register(webhookRoutes, { prefix: '/api/v1/webhooks' });
+server.register(waitingRoomRoutes, { prefix: '/api/v1' });
 
 server.get('/health', async () => {
   return { status: 'ok' };
