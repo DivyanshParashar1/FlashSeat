@@ -9,6 +9,7 @@ export declare module 'fastify' {
       JWT_SECRET: string;
       JWT_EXPIRY: string;
       RESERVATION_LOCK_STRATEGY: 'pessimistic' | 'optimistic';
+      SWEEPER_INTERVAL_MS: number;
     };
   }
 }
