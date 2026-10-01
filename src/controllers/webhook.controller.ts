@@ -1,6 +1,9 @@
 import * as webhookService from '../services/webhook.service.js';
 import { type FastifyReply, type FastifyRequest } from 'fastify';
-import { handlePaymentCaptured } from '../services/payment_webhook.service.js';
+import {
+  handlePaymentCaptured,
+  handlePaymentFailed,
+} from '../services/payment_webhook.service.js';
 
 export const razorpayWebhook = async (
   request: FastifyRequest & { rawBody?: Buffer },
@@ -37,6 +40,9 @@ export const razorpayWebhook = async (
     switch (event.event) {
       case 'payment.captured':
         await handlePaymentCaptured(event, request.server.log);
+        break;
+      case 'payment.failed':
+        await handlePaymentFailed(event, request.server.log);
         break;
       default:
         request.server.log.info(

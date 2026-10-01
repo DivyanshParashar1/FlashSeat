@@ -124,3 +124,89 @@ export const handlePaymentCaptured = async (
     return { status: 'processed' as const };
   });
 };
+
+export const handlePaymentFailed = async (
+  event: RazorpayWebhookEvent,
+  log: FastifyBaseLogger,
+): Promise<{ status: 'processed' | 'duplicate' | 'orphaned' }> => {
+  const paymentEntity = event.payload.payment?.entity;
+  const razorpayOrderId = paymentEntity?.order_id;
+  const razorpayPaymentId = paymentEntity?.id;
+  if (!razorpayOrderId || !razorpayPaymentId) {
+    throw new Error('payment.failed event missing order_id or payment_id');
+  }
+
+  return await db.transaction(async (tx) => {
+    const dedup = await tx
+      .insert(processed_webhook_events)
+      .values({ razorpayEventId: event.id })
+      .onConflictDoNothing({ target: processed_webhook_events.razorpayEventId })
+      .returning({ id: processed_webhook_events.razorpayEventId });
+    if (dedup.length === 0) {
+      log.info({ eventId: event.id }, 'webhook duplicate — already processed');
+      return { status: 'duplicate' as const };
+    }
+
+    const rows = await tx
+      .select({
+        paymentId: payments.id,
+        reservationId: payments.reservationId,
+        reservationStatus: reservations.status,
+      })
+      .from(payments)
+      .innerJoin(reservations, eq(reservations.id, payments.reservationId))
+      .where(eq(payments.razorpayOrderId, razorpayOrderId))
+      .for('update');
+
+    const row = rows[0];
+    if (!row) {
+      log.warn(
+        { razorpayOrderId },
+        'payment.failed for unknown order; dropping',
+      );
+      return { status: 'orphaned' as const };
+    }
+
+    if (row.reservationStatus !== 'pending') {
+      log.warn(
+        { reservationId: row.reservationId, status: row.reservationStatus },
+        'payment.failed for non-pending reservation',
+      );
+      return { status: 'orphaned' as const };
+    }
+
+    await tx
+      .update(payments)
+      .set({ status: 'failed', razorpayPaymentId })
+      .where(eq(payments.id, row.paymentId));
+
+    await tx
+      .update(reservations)
+      .set({ status: 'failed' })
+      .where(eq(reservations.id, row.reservationId));
+
+    await tx
+      .update(seats)
+      .set({
+        status: 'available',
+        heldBy: null,
+        heldUntil: null,
+        version: sql`${seats.version} + 1`,
+      })
+      .where(
+        inArray(
+          seats.id,
+          tx
+            .select({ id: reservationSeats.seatId })
+            .from(reservationSeats)
+            .where(eq(reservationSeats.reservationId, row.reservationId)),
+        ),
+      );
+
+    log.info(
+      { eventId: event.id, reservationId: row.reservationId },
+      'payment.failed processed',
+    );
+    return { status: 'processed' as const };
+  });
+};
